@@ -1,0 +1,51 @@
+{
+  "code": [
+    {
+      "source": "src/agent/*.py",
+      "target": "standalone_agent_env/agents/*.py",
+      "notes": "Extracted one-file-per-agent strategy implementations with local runtime imports and top-of-file model configuration blocks."
+    },
+    {
+      "source": "src/agent/agent.py",
+      "target": "standalone_agent_env/runtime/core.py",
+      "notes": "Shared execution loop extracted for standalone use."
+    },
+    {
+      "source": "src/agent/agent_prompts.py",
+      "target": "standalone_agent_env/runtime/prompts.py",
+      "notes": "Prompt templates reused by standalone agent strategies and guardian logic."
+    },
+    {
+      "source": "src/model/model.py + src/utils/guardian_parser.py + src/utils/tool_parser.py",
+      "target": "standalone_agent_env/runtime/",
+      "notes": "Shared model, guard parsing, and tool parsing utilities localized for the standalone environment."
+    },
+    {
+      "source": "src/task_executor/agentharm.py + src/task_executor/asb.py",
+      "target": "standalone_agent_env/processors/",
+      "notes": "Benchmark processors localized and retargeted to standalone data paths."
+    }
+  ],
+  "data": [
+    {
+      "source": "benchmark/agentharm/dataset/",
+      "target": "standalone_agent_env/data/agentharm/dataset/",
+      "notes": "AgentHarm behavior datasets."
+    },
+    {
+      "source": "benchmark/agentharm/environments/",
+      "target": "standalone_agent_env/data/agentharm/environments/",
+      "notes": "Required AgentHarm tool environments and content assets."
+    },
+    {
+      "source": "benchmark/asb/data/",
+      "target": "standalone_agent_env/data/asb/data/",
+      "notes": "ASB task definitions and tool metadata."
+    },
+    {
+      "source": "src/task_executor/agentdojo/data/suites/",
+      "target": "standalone_agent_env/data/agentdojo/suites/",
+      "notes": "AgentDojo suite environment definitions and injection metadata."
+    }
+  ]
+}
