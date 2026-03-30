@@ -14,8 +14,8 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     OpenAI = None
 
-from standalone_agent_env.runtime.guardian_parser import alignment_check_parser, guardian_paser_map
-from standalone_agent_env.runtime.prompts import GUARD_TEMPLATES
+from .guardian_parser import alignment_check_parser, guardian_paser_map
+from .prompts import GUARD_TEMPLATES
 
 try:
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -29,6 +29,9 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     LLM = None
     SamplingParams = None
+
+
+DEFAULT_GUARD_TEMPLATE_KEY = "qwen2.5-7b-instruct"
 
 
 @dataclass
@@ -141,7 +144,9 @@ class StandaloneGuardian(StandaloneModel):
 
     def get_judgment_res(self, meta_info, max_turn: int = 3):
         """根据 guard 模板和解析器反复尝试获取结构化安全判断结果。"""
-        guard_input = GUARD_TEMPLATES[self.model_name].format(**meta_info)
+        template_key = self.model_name if self.model_name in GUARD_TEMPLATES else DEFAULT_GUARD_TEMPLATE_KEY
+        parser_key = self.model_name if self.model_name in guardian_paser_map else DEFAULT_GUARD_TEMPLATE_KEY
+        guard_input = GUARD_TEMPLATES[template_key].format(**meta_info)
         guard_messages = [{"role": "user", "content": guard_input}]
         results = {}
 
@@ -157,8 +162,8 @@ class StandaloneGuardian(StandaloneModel):
                 guard_res = self.client.chat(guard_messages, sampling_params=self.sampling)
                 guard_res = guard_res[0].outputs[0].text.strip()
 
-            if self.model_name in guardian_paser_map:
-                parser = guardian_paser_map[self.model_name]
+            if parser_key in guardian_paser_map:
+                parser = guardian_paser_map[parser_key]
                 parsed = parser(guard_res)
                 if isinstance(parsed, tuple):
                     parser_res, results = parsed

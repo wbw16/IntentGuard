@@ -5,12 +5,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from standalone_agent_env.agents import get_agent_builder
-from standalone_agent_env.processors.asb import ASBProcessor
+from phase0.common import load_repo_env
 
 
 def main():
     """解析命令行参数并启动 ASB 实验。"""
+    load_repo_env()
+
+    from standalone_agent_env.agents import get_agent_builder
+    from standalone_agent_env.processors.asb import ASBProcessor
+
     parser = argparse.ArgumentParser(description="Run ASB with a standalone agent strategy.")
     parser.add_argument("--agent", default="sec_react", help="Agent strategy name.")
     parser.add_argument("--attack-type", default="OPI", choices=["OPI", "DPI"])

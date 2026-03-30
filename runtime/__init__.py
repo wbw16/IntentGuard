@@ -4,6 +4,6 @@
 避免在具体文件里反复记忆更深层的模块路径。
 """
 
-from standalone_agent_env.runtime.core import AgentCore
-from standalone_agent_env.runtime.factory import create_guard_from_config, create_model_from_config
-from standalone_agent_env.runtime.modeling import RuntimeModelConfig, StandaloneGuardian, StandaloneModel
+from .core import AgentCore
+from .factory import create_guard_from_config, create_model_from_config
+from .modeling import RuntimeModelConfig, StandaloneGuardian, StandaloneModel

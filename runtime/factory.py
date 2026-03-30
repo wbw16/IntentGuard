@@ -6,7 +6,7 @@ from __future__ import annotations
 统一的 `RuntimeModelConfig`，并创建普通模型或 guardian 模型对象。
 """
 
-from standalone_agent_env.runtime.modeling import RuntimeModelConfig, StandaloneGuardian, StandaloneModel
+from .modeling import RuntimeModelConfig, StandaloneGuardian, StandaloneModel
 
 
 def create_model_from_config(**kwargs) -> StandaloneModel:

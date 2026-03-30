@@ -5,12 +5,16 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from standalone_agent_env.agents import get_agent_builder
-from standalone_agent_env.processors.agentharm import AgentHarmProcessor
+from phase0.common import load_repo_env
 
 
 def main():
     """解析命令行参数并启动 AgentHarm 实验。"""
+    load_repo_env()
+
+    from standalone_agent_env.agents import get_agent_builder
+    from standalone_agent_env.processors.agentharm import AgentHarmProcessor
+
     parser = argparse.ArgumentParser(description="Run AgentHarm with a standalone agent strategy.")
     parser.add_argument("--agent", default="react", help="Agent strategy name.")
     parser.add_argument("--subset", default="harmful", choices=["harmful", "benign", "attack"])
