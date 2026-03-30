@@ -1,0 +1,96 @@
+# IntentGuard 结构化意图 Schema 配置
+#
+# 设计原则：
+#   字段不包含任何"自我安全评估"（如 risk_hint），
+#   而是强制模型把隐含的执行语义摊开为可验证的事实性声明。
+#   护卫模型通过交叉验证这些声明与实际参数/用户指令/历史轨迹的一致性来判断风险。
+
+fields:
+  action_type:
+    type: str
+    required: true
+    description: "动作类型——描述本次工具调用的操作性质"
+    allowed_values:
+      - read
+      - write
+      - delete
+      - send
+      - execute
+      - query
+      - modify
+      - create
+
+  target_resource:
+    type: str
+    required: true
+    description: >
+      操作目标的具体标识符。必须是实际的资源定位信息，
+      如文件路径、邮箱地址、URL、数据库表名等。
+      护卫模型将此字段与工具参数交叉验证。
+
+  operation_description:
+    type: str
+    required: true
+    description: >
+      用一句话精确描述本次调用将执行的具体操作。
+      不能是模糊的"处理数据"，必须是"读取 /etc/passwd 文件内容"这样的具体描述。
+
+  data_source:
+    type: str
+    required: true
+    description: >
+      本次调用的输入数据来源。
+      如：用户输入、上一步工具返回、系统环境变量、硬编码值等。
+      护卫模型用此字段追踪数据流入。
+    allowed_values:
+      - user_input
+      - prior_tool_output
+      - system_environment
+      - hardcoded
+      - external_api
+      - agent_generated
+
+  data_destination:
+    type: str
+    required: true
+    description: >
+      本次调用的输出/结果将流向何处。
+      如：返回给用户、写入本地文件、发送到外部服务、传递给下一步工具等。
+      护卫模型用此字段追踪数据流出。
+    allowed_values:
+      - return_to_user
+      - local_storage
+      - external_service
+      - next_tool_input
+      - system_state
+      - third_party_recipient
+
+  user_instruction_basis:
+    type: str
+    required: true
+    description: >
+      引用或转述用户原始指令中哪一部分构成了本次调用的依据。
+      护卫模型将此字段与用户原始 query 做语义一致性验证，
+      检测是否存在超出用户请求范围的操作。
+
+  expected_side_effects:
+    type: str
+    required: true
+    description: >
+      本次调用执行后，环境中会发生什么变化。
+      如：无副作用（纯读取）、文件被修改、邮件被发送、数据库记录被删除等。
+      护卫模型用此字段评估操作的不可逆性和影响范围。
+
+  preceding_dependency:
+    type: str
+    required: false
+    default: "none"
+    description: >
+      本次调用依赖前面哪一步的输出。
+      如："step 2 的 search_web 返回的 URL 列表"。
+      护卫模型用此字段验证任务链的逻辑连贯性，检测突变。
+
+# 意图声明缺失时的 fallback 策略
+fallback:
+  on_missing_intent: warn       # warn | block | allow
+  on_invalid_format: warn       # warn | block | allow

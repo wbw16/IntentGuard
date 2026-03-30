@@ -9,6 +9,52 @@ from __future__ import annotations
 import json
 import re
 
+from runtime.intent_schema import IntentDeclaration, get_fallback_config
+
+
+def extract_intent(text: str) -> IntentDeclaration:
+    """从模型输出中提取 <intent> 块并解析为 IntentDeclaration。
+
+    格式示例：
+        <intent>
+        action_type: read
+        target_object: file
+        ...
+        </intent>
+
+    解析失败时根据 fallback 配置决定行为，返回保守的 fallback 意图。
+    """
+    match = re.search(r"<intent>(.*?)</intent>", text, re.S)
+    if not match:
+        fb = get_fallback_config()
+        if fb.get("on_missing_intent", "warn") != "allow":
+            return IntentDeclaration.make_fallback(raw_text=text)
+        return IntentDeclaration()
+
+    raw = match.group(1).strip()
+    data: dict = {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or ":" not in line:
+            continue
+        key, _, val = line.partition(":")
+        key = key.strip()
+        val = val.strip()
+        data[key] = val
+
+    try:
+        intent = IntentDeclaration.from_dict(data)
+        intent.raw_text = raw
+        errors = intent.validate()
+        if errors:
+            fb = get_fallback_config()
+            if fb.get("on_invalid_format", "warn") != "allow":
+                fallback = IntentDeclaration.make_fallback(raw_text=raw)
+                return fallback
+        return intent
+    except Exception:
+        return IntentDeclaration.make_fallback(raw_text=raw)
+
 
 def extract_tool_params_react(text: str):
     """从 ReAct 风格文本中提取工具名和 JSON 参数。"""
@@ -57,9 +103,10 @@ def extract_tool_params_planexecute(tool_call):
 
 
 tool_extractor = {
-    # 这里维护“策略名 -> 解析函数”的映射，方便上层按策略动态选择解析器。
+    # 这里维护"策略名 -> 解析函数"的映射，方便上层按策略动态选择解析器。
     "react": extract_tool_params_react,
     "react_firewall": extract_tool_params_react,
     "plan_and_execute": extract_tool_params_planexecute,
     "sec_react": extract_tool_params_react,
+    "intentguard": extract_tool_params_react,
 }
