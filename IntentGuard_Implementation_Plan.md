@@ -161,104 +161,87 @@ standalone_agent_env/
 
 ---
 
-## Phase 2：执行前护栏中间件（核心模块）（预计 4-5 天）
+## Phase 2：执行前护栏中间件（核心模块） ✅ 已完成
 
 ### 目标
 构建外挂式护栏中间件，实现多维交叉验证与细粒度决策。
 
-### Claude Code 任务清单
+### 设计原则
+- 决策类型可配置（`configs/decision_types.yaml`），4 种决策：ALLOW / DENY / MODIFY / CONFIRM
+- MODIFY 含 subtypes: downscope / rewrite / sanitize
+- 交叉验证单次 prompt 完成 4 维评分，复用已有 GuardSubsystem 做模型调用
+- 策略规则从 `configs/policy_rules.yaml` 加载，优先级高的规则可覆盖交叉验证分数
+
+### 决策类型配置（`configs/decision_types.yaml`）
+
+| 决策类型 | runtime_action | 说明 |
+|----------|---------------|------|
+| ALLOW | execute_original | 原参数执行 |
+| DENY | skip_and_report | 跳过执行，返回拒绝原因 |
+| MODIFY | execute_modified | 用修改后参数执行（subtypes: downscope/rewrite/sanitize） |
+| CONFIRM | request_confirmation | 请求确认（实验中由 INTENTGUARD_AUTO_CONFIRM env var 控制） |
+
+### 交叉验证四维度
+
+| 维度 | 验证内容 |
+|------|---------|
+| intent_vs_params | 声明意图 vs 实际工具参数匹配度 |
+| intent_vs_user_query | 声明意图 vs 用户原始请求一致性 |
+| intent_vs_history | 声明意图 vs 历史轨迹逻辑连贯性 |
+| holistic | 综合一致性 + 矛盾点列表 |
+
+### 已完成任务
 
 ```
-任务 2.1: 创建护栏目录骨架
-- 创建 guardrail/ 目录及 __init__.py
-- 定义 GuardrailMiddleware 主类接口：
-  - evaluate(intent, tool_call, context) -> GuardrailDecision
-  - 输入: IntentDeclaration, ToolCallParams, ExecutionContext
-  - 输出: GuardrailDecision
+任务 2.1: ✅ 创建决策类型配置
+- configs/decision_types.yaml — 4 种决策类型 + 阈值映射
+- configs/policy_rules.yaml — 4 条策略规则 + fallback
 
-任务 2.2: 实现 GuardrailDecision 决策结构
-- 在 guardrail/__init__.py 中定义
-- decision_type: Enum (ALLOW, DENY, REWRITE, DOWNSCOPE, CONFIRM, REPLACE)
-- reason: str                   # 决策理由（可解释性）
-- modified_params: dict | None  # REWRITE/DOWNSCOPE 时的修改后参数
-- replacement_call: dict | None # REPLACE 时的替代调用
-- confidence: float             # 决策置信度
-- audit_record: dict            # 完整审计记录
+任务 2.2: ✅ 实现护栏数据结构与中间件入口
+- guardrail/__init__.py — DecisionType, ModifySubtype, DimensionScore,
+  CrossValidationResult, PolicyMatch, GuardrailDecision, GuardrailMiddleware
 
-任务 2.3: 实现交叉验证引擎 (cross_validator.py) ★ 核心创新点
-- 创建 guardrail/cross_validator.py
-- 实现 CrossValidator 类，包含四维验证：
-  维度 1: intent_vs_user_query()
-    - 将声明意图与原始用户指令做语义一致性检查
-    - 检测意图是否超出用户请求范围
-  维度 2: intent_vs_history()
-    - 将声明意图与历史 function call 轨迹做逻辑连贯性检查
-    - 检测是否出现与历史轨迹不一致的突变
-  维度 3: intent_vs_params()
-    - 将声明意图与当前工具参数做匹配性检查
-    - 检测参数中的实际操作是否与声明意图矛盾
-  维度 4: holistic_consistency()
-    - 综合以上三个维度的结果做整体一致性推理
-    - 输出一致性分数和矛盾点列表
-- 每个维度输出: ConsistencyResult(score, contradictions, evidence)
+任务 2.3: ✅ 实现交叉验证引擎 ★ 核心创新点
+- guardrail/cross_validator.py — CrossValidator 类
+- 单次 prompt 完成 4 维评分，复用 guard_model._invoke_model()
 
-任务 2.4: 实现护卫模型适配层 (guard_model_adapter.py)
-- 创建 guardrail/guard_model_adapter.py
-- 封装护卫模型的调用接口
-- 构造验证 prompt：将意图+参数+历史+用户指令拼装为结构化输入
-- 解析护卫模型返回的 JSON 判定结果
-- 支持不同底座模型（GPT-4o, Claude, Qwen 等）
+任务 2.4: ✅ 实现护卫模型适配层
+- guardrail/guard_model_adapter.py — prompt 构造 + JSON 响应解析
+- build_cross_validation_prompt() / parse_cross_validation_response()
 
-任务 2.5: 实现策略规则引擎 (policy_engine.py)
-- 创建 guardrail/policy_engine.py
-- 加载 configs/policy_rules.yaml 中的策略规则
-- 实现规则匹配逻辑：
-  - 工具级权限规则 (哪些工具需要额外确认)
-  - 数据流向规则 (external 发送需要更高审查)
-  - 受影响方规则 (涉及第三方时触发确认)
-  - 历史频率规则 (短时间内同一工具异常高频调用)
+任务 2.5: ✅ 实现策略规则引擎
+- guardrail/policy_engine.py — PolicyEngine 类
+- 从 YAML 加载规则，支持精确匹配和 contains 匹配
 
-任务 2.6: 实现细粒度决策器 (decision_maker.py)
-- 创建 guardrail/decision_maker.py
-- 综合 cross_validator 和 policy_engine 的输出
-- 实现决策逻辑：
-  - 一致性高 + 策略通过 → ALLOW
-  - 一致性高 + 策略部分违反 → DOWNSCOPE (缩减参数范围)
-  - 一致性中等 + 可修正 → REWRITE (重写参数)
-  - 一致性低 + 明显矛盾 → DENY
-  - 一致性中等 + 不确定 → CONFIRM (请求用户确认)
-  - 检测到更安全的替代方案 → REPLACE
+任务 2.6: ✅ 实现细粒度决策器
+- guardrail/decision_maker.py — DecisionMaker 类
+- 策略硬覆盖优先，然后按 holistic_score 阈值映射
 
-任务 2.7: 实现审计日志 (audit_logger.py)
-- 创建 guardrail/audit_logger.py
-- 记录每次护栏评估的完整信息：
-  - 时间戳、调用 ID、用户原始指令
-  - 声明意图、工具参数、历史轨迹摘要
-  - 交叉验证各维度分数
-  - 最终决策及理由
-- 输出为 JSONL 格式，便于后续分析
+任务 2.7: ✅ 实现审计日志
+- guardrail/audit_logger.py — AuditLogger 类
+- JSONL 格式输出到 outputs/guardrail_audit/
 
-任务 2.8: 创建策略规则配置
-- 创建 configs/policy_rules.yaml
-- 定义默认策略规则集
-- 包含高危工具清单、敏感操作类型、数据流向约束等
+任务 2.8: ✅ 集成护栏到 IntentGuard Agent
+- agents/intentguard_agent.py — _evaluate_intent() 调用 GuardrailMiddleware
+- agent 循环处理 ALLOW/DENY/MODIFY/CONFIRM 四种决策
 
-任务 2.9: 集成护栏到 IntentGuard Agent
-- 修改 agents/intentguard_agent.py
-- 在工具执行前调用 GuardrailMiddleware.evaluate()
-- 根据 GuardrailDecision 执行对应动作：
-  - ALLOW: 正常执行
-  - DENY: 跳过执行，返回拒绝信息
-  - REWRITE: 用修改后的参数执行
-  - DOWNSCOPE: 用缩减后的参数执行
-  - CONFIRM: 模拟用户确认（实验中自动处理）
-  - REPLACE: 执行替代调用
+任务 2.9: ✅ 测试
+- tests/test_guardrail.py — 24 个测试全部通过
+- 覆盖: adapter, cross_validator, policy_engine, decision_maker,
+  audit_logger, middleware 集成
 ```
 
 ### 产出物
-- `guardrail/` 完整目录，含 7 个模块
-- `configs/policy_rules.yaml` 策略配置
-- `agents/intentguard_agent.py` 集成护栏的智能体
+- `configs/decision_types.yaml` — 决策类型与阈值配置
+- `configs/policy_rules.yaml` — 策略规则配置
+- `guardrail/__init__.py` — 公共 API 与数据结构
+- `guardrail/guard_model_adapter.py` — prompt 构造与响应解析
+- `guardrail/cross_validator.py` — 四维交叉验证引擎
+- `guardrail/policy_engine.py` — 策略规则引擎
+- `guardrail/decision_maker.py` — 细粒度决策器
+- `guardrail/audit_logger.py` — 审计日志
+- `agents/intentguard_agent.py` — 集成护栏的智能体
+- `tests/test_guardrail.py` — 24 个单元测试
 
 ---
 

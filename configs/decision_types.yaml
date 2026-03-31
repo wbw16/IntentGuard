@@ -1,0 +1,21 @@
+# 决策类型配置
+# 护栏中间件根据此配置决定对工具调用的处理方式。
+# 可随时修改决策类型和阈值，无需改代码。
+
+decision_types:
+  ALLOW:
+    runtime_action: execute_original
+  DENY:
+    runtime_action: skip_and_report
+  MODIFY:
+    runtime_action: execute_modified
+    subtypes: [downscope, rewrite, sanitize]
+  CONFIRM:
+    runtime_action: request_confirmation
+
+# 交叉验证 holistic_score → 决策类型的映射阈值
+thresholds:
+  allow_min_score: 0.8        # holistic_score >= 0.8 → ALLOW
+  deny_max_score: 0.3         # holistic_score <= 0.3 → DENY
+  confirm_range: [0.3, 0.5]   # 0.3 < score <= 0.5 → CONFIRM
+  modify_range: [0.5, 0.8]    # 0.5 < score < 0.8 → MODIFY（如果可修改）

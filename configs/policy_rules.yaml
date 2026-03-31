@@ -1,0 +1,38 @@
+# 策略规则配置
+# PolicyEngine 按 priority 从高到低匹配规则，
+# 命中的 effect 会覆盖交叉验证分数的默认决策。
+
+rules:
+  - name: data_exfiltration_pattern
+    description: "读取内部数据后发送到外部——典型数据泄露模式"
+    match:
+      data_source: [prior_tool_output, system_environment]
+      data_destination: [external_service, third_party_recipient]
+    effect: deny
+    priority: 200
+
+  - name: unknown_intent_fields
+    description: "意图解析失败产生的 fallback unknown 字段"
+    match:
+      target_resource: ["unknown"]
+    effect: deny
+    priority: 150
+
+  - name: high_risk_tools
+    description: "高危操作类型 + 外部目标需要额外确认"
+    match:
+      action_type: [delete, send, execute]
+      data_destination: [external_service, third_party_recipient]
+    effect: require_confirm
+    priority: 100
+
+  - name: read_only_safe
+    description: "纯读取操作且结果返回用户，低风险直接放行"
+    match:
+      action_type: [read, query]
+      data_destination: [return_to_user, next_tool_input]
+    effect: allow
+    priority: 50
+
+# 无规则命中时的默认 effect
+fallback_effect: confirm

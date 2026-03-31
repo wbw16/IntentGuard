@@ -27,6 +27,7 @@ from runtime.intent_schema import IntentDeclaration
 from runtime.modeling import RuntimeModelConfig
 from runtime.parsers import extract_intent, extract_tool_params_react
 from runtime.prompts import INTENTGUARD_REACT_SYSTEM_PROMPT
+from guardrail import DecisionType, GuardrailDecision, GuardrailMiddleware
 
 
 class IntentGuard_Agent:
@@ -45,6 +46,11 @@ class IntentGuard_Agent:
         self.guard_model = guard_model
         self.max_turns = max_turns
         self.guard_mode = guard_mode
+        # 护栏中间件：passthrough 模式下禁用审计以减少开销
+        self.middleware = GuardrailMiddleware(
+            guard_model,
+            audit_enabled=(guard_mode != "passthrough"),
+        )
 
     def format_tools_for_prompt(self, tool_descriptions, tool_params):
         result = []
@@ -58,19 +64,24 @@ class IntentGuard_Agent:
         return "\n".join(result)
 
     def _evaluate_intent(self, intent: IntentDeclaration, tool_name: str,
-                         tool_params: dict, query: str, history: list) -> tuple[bool, str]:
-        """调用护栏模块评估意图。
+                         tool_params: dict, query: str, history: list,
+                         tool_descriptions: str = "") -> GuardrailDecision:
+        """调用护栏中间件评估意图。
 
-        Phase 1 占位实现：仅做基础格式校验。
-        Phase 2 将替换为完整的 GuardrailMiddleware.evaluate() 调用。
-
-        Returns:
-            (allowed, reason)
+        passthrough 模式下跳过交叉验证，仅做基础格式校验。
         """
-        errors = intent.validate()
-        if errors:
-            return False, f"Intent validation failed: {'; '.join(errors)}"
-        return True, "ok"
+        if self.guard_mode == "passthrough":
+            errors = intent.validate()
+            if errors:
+                return GuardrailDecision(
+                    decision_type=DecisionType.DENY,
+                    reason=f"Intent validation failed: {'; '.join(errors)}",
+                )
+            return GuardrailDecision(decision_type=DecisionType.ALLOW, reason="passthrough")
+
+        return self.middleware.evaluate(
+            intent, tool_name, tool_params, query, history, tool_descriptions,
+        )
 
     def agent_invoke(self, query="", available_tool_descriptions={},
                      available_tool_params={}, known_actions={}, injection_task=""):
@@ -125,18 +136,36 @@ class IntentGuard_Agent:
                     continue
 
                 # 护栏评估
-                allowed, reason = self._evaluate_intent(
-                    intent, tool_name, tool_params, query, bot.messages
+                decision = self._evaluate_intent(
+                    intent, tool_name, tool_params, query, bot.messages,
+                    available_tool_descriptions_str,
                 )
-                if not allowed:
+                intent_log[-1]["decision"] = decision.to_dict()
+
+                if decision.decision_type == DecisionType.DENY:
                     observation = (
-                        f"IntentGuard blocked this action.\nReason: {reason}\n"
+                        f"IntentGuard blocked this action.\nReason: {decision.reason}\n"
                         "Please reconsider your approach."
                     )
-                    logs += f"[IntentGuard BLOCKED] {reason}\n"
                     logs += "Observation: " + observation + "\n-----------------------------------\n"
                     next_prompt = f"Observation: {observation}"
                     continue
+
+                if decision.decision_type == DecisionType.CONFIRM:
+                    auto_confirm = os.getenv("INTENTGUARD_AUTO_CONFIRM", "deny")
+                    if auto_confirm != "allow":
+                        observation = (
+                            f"IntentGuard requires confirmation for this action.\n"
+                            f"Reason: {decision.reason}\nAuto-confirm policy: {auto_confirm}.\n"
+                            "Please reconsider your approach."
+                        )
+                        logs += "Observation: " + observation + "\n-----------------------------------\n"
+                        next_prompt = f"Observation: {observation}"
+                        continue
+
+                if decision.decision_type == DecisionType.MODIFY and decision.modified_params:
+                    tool_params = decision.modified_params
+                    logs += f" -- params modified by guardrail: {tool_params}\n"
 
                 # 执行工具
                 action_fn = known_actions[tool_name]
