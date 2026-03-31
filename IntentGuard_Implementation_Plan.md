@@ -245,74 +245,94 @@ standalone_agent_env/
 
 ---
 
-## Phase 3：训练数据构造流水线（预计 3-4 天）
+## Phase 3：训练数据构造流水线 ✅ 已完成
 
 ### 目标
 基于已有攻击数据集，自动化构造"意图—参数—风险—决策"训练样本。
 
-### Claude Code 任务清单
+### 数据流水线架构
 
 ```
-任务 3.1: 实现攻击数据采集器 (data_collector.py)
-- 创建 training/data_collector.py
-- 从 data/agentharm/ 读取 harmful + benign 样本
-- 从 data/asb/ 读取 OPI + DPI 攻击场景
-- 从 data/agentdojo/ 读取注入向量
-- 统一输出格式: AttackScenario(query, tools, attack_type, expected_behavior)
+DataCollector (agentharm/asb/agentdojo)
+  → AttackScenario 列表
+    → TraceGenerator (驱动 agent 执行)
+      → ExecutionTrace 列表
+        → SampleConstructor (抽取每步为样本)
+          → TrainingSample 列表
+            → DeceptionAugmentor (构造虚假意图变体)
+              → 增强后的 TrainingSample 列表
+                → GuardTrainer (保存/验证/转 SFT/微调)
+```
 
-任务 3.2: 实现多底座调用轨迹生成器 (trace_generator.py)
-- 创建 training/trace_generator.py
-- 对每个 AttackScenario，使用不同 agent 策略执行：
-  - react_agent (无防护基线)
-  - sec_react_agent (ToolSafe 防护)
-  - intentguard_agent (带意图声明)
-- 对每个策略可切换不同 LLM 底座
-- 记录完整执行轨迹: 每步的 intent + params + observation
-- 输出: ExecutionTrace(steps, final_result, was_attacked)
+### 数据结构
 
-任务 3.3: 实现样本构造器 (sample_constructor.py)
-- 创建 training/sample_constructor.py
-- 从 ExecutionTrace 中抽取每一步为独立样本
-- 每个样本包含:
-  - input: {user_query, intent_declaration, tool_params, call_history}
-  - label: {decision_type, risk_level, reason, is_deceptive_intent}
-- 正常调用标注为 ALLOW
-- 攻击成功的调用标注为 DENY/REWRITE 等
-- 边界情况标注为 CONFIRM/DOWNSCOPE
+| 结构 | 用途 |
+|------|------|
+| AttackScenario | 统一的攻击场景描述（从各数据集归一化） |
+| ExecutionTrace | 完整执行轨迹（每步 intent + params + observation） |
+| TraceStep | 轨迹中的单步记录 |
+| TrainingSample | 训练样本（input: 上下文, label: 决策, metadata） |
+| DecisionLabel | ALLOW / DENY / MODIFY / CONFIRM |
+| AttackType | NONE / OPI / DPI / HARMFUL / INJECTION |
+| DeceptionStrategy | 4 种欺骗策略 |
 
-任务 3.4: 实现意图欺骗增强器 (deception_augmentor.py) ★ 关键
-- 创建 training/deception_augmentor.py
-- 对已有攻击样本，自动构造"表面合规的虚假意图"
-- 方法:
-  - 取攻击调用的真实参数
-  - 用 LLM 生成一个看似合理但与参数矛盾的意图声明
-  - 形成 (fake_intent, real_params, real_history) 三元组
-- 同时构造正常调用的"正确意图"样本作为正样本
-- 确保正负样本比例平衡
+### 意图欺骗增强策略
 
-任务 3.5: 定义标注 Schema
-- 创建 training/label_schema.py
-- 定义 TrainingSample 数据类
-- 定义标注规范和质量检查逻辑
-- 实现样本统计和分布检查工具
+| 策略 | 说明 |
+|------|------|
+| understate_risk | 淡化风险：声明 read 实际 delete |
+| mislabel_target | 错标目标：声明操作 A 实际操作 B |
+| fabricate_basis | 伪造依据：编造不存在的用户指令 |
+| hide_side_effects | 隐藏副作用：声明无副作用实际有 |
 
-任务 3.6: 实现训练入口
-- 创建 training/train_guard.py
-- 支持用构造的数据微调护卫模型
-- 支持 LoRA / full fine-tune 两种模式
-- 训练后保存模型到 outputs/guard_models/
+### 已完成任务
 
-任务 3.7: 创建训练配置
-- 创建 configs/training_config.yaml
-- 定义底座模型选择、学习率、epoch、batch_size
-- 定义数据增强参数
-- 定义验证集划分比例
+```
+任务 3.1: ✅ 创建训练配置
+- configs/training_config.yaml — 数据源、轨迹生成、样本构造、欺骗增强、微调参数
+
+任务 3.2: ✅ 定义标注 Schema
+- training/label_schema.py — TrainingSample, AttackScenario, ExecutionTrace 等数据结构
+- validate_sample() 质量检查, compute_distribution() 分布统计
+
+任务 3.3: ✅ 实现攻击数据采集器
+- training/data_collector.py — DataCollector 类
+- 从 agentharm (harmful/benign), asb (OPI/DPI), agentdojo 采集并归一化
+
+任务 3.4: ✅ 实现调用轨迹生成器
+- training/trace_generator.py — TraceGenerator 类
+- 驱动 agent 执行场景，收集 intent_log 和执行日志
+
+任务 3.5: ✅ 实现样本构造器
+- training/sample_constructor.py — SampleConstructor 类
+- 从轨迹每步抽取样本，自动标注 ALLOW/DENY/CONFIRM
+
+任务 3.6: ✅ 实现意图欺骗增强器 ★ 关键
+- training/deception_augmentor.py — DeceptionAugmentor 类
+- 支持 LLM 生成 + 规则 fallback 两种模式
+- 4 种欺骗策略，每个攻击样本生成多个变体
+
+任务 3.7: ✅ 实现训练入口
+- training/train_guard.py — GuardTrainer 类
+- save/load 样本, validate 数据集, prepare SFT 数据, train (LoRA/full)
+- 无 GPU 环境返回 dry_run 配置摘要
+
+任务 3.8: ✅ 测试
+- tests/test_training.py — 18 个测试全部通过
+- 覆盖: label_schema, data_collector, sample_constructor,
+  deception_augmentor, train_guard
 ```
 
 ### 产出物
-- `training/` 完整目录，含 6 个模块
-- `data/guard_training/` 生成的训练数据
-- `configs/training_config.yaml` 训练配置
+- `configs/training_config.yaml` — 训练配置
+- `training/__init__.py` — 模块文档
+- `training/label_schema.py` — 标注 Schema 与数据结构
+- `training/data_collector.py` — 攻击数据采集器
+- `training/trace_generator.py` — 调用轨迹生成器
+- `training/sample_constructor.py` — 样本构造器
+- `training/deception_augmentor.py` — 意图欺骗增强器
+- `training/train_guard.py` — 训练入口
+- `tests/test_training.py` — 18 个单元测试
 
 ---
 

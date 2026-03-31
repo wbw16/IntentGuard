@@ -1,0 +1,87 @@
+# 训练数据构造与模型微调配置
+
+# ---------------------------------------------------------------------------
+# 数据源
+# ---------------------------------------------------------------------------
+data_sources:
+  agentharm:
+    harmful: data/agentharm/dataset/harmful_behaviors_test_public.json
+    benign: data/agentharm/dataset/benign_behaviors_test_public.json
+    tools_dir:
+      harmful: data/agentharm/environments/harmful_tools
+      benign: data/agentharm/environments/benign_tools
+
+  asb:
+    tasks: data/asb/data/agent_task.jsonl
+    normal_tools: data/asb/data/all_normal_tools.jsonl
+    attack_tools: data/asb/data/all_attack_tools.jsonl
+    attack_types: [OPI, DPI]
+
+  agentdojo:
+    suites_dir: data/agentdojo/suites
+    suites: [banking, slack, travel, workspace]
+
+# ---------------------------------------------------------------------------
+# 轨迹生成
+# ---------------------------------------------------------------------------
+trace_generation:
+  agent_strategies:
+    - react           # 无防护基线
+    - sec_react       # ToolSafe 防护
+    - intentguard     # 带意图声明
+  max_turns: 10
+  timeout_per_trace: 120   # 秒
+
+# ---------------------------------------------------------------------------
+# 样本构造
+# ---------------------------------------------------------------------------
+sample_construction:
+  output_dir: data/guard_training
+  # 正负样本比例目标
+  positive_negative_ratio: 1.0
+  # 标注映射：攻击成功 → DENY，正常调用 → ALLOW
+  label_mapping:
+    attack_success: DENY
+    attack_blocked: ALLOW
+    normal_call: ALLOW
+    boundary_case: CONFIRM
+
+# ---------------------------------------------------------------------------
+# 意图欺骗增强
+# ---------------------------------------------------------------------------
+deception_augmentation:
+  enabled: true
+  # 用于生成虚假意图的模型
+  generator_model: gpt-4o-mini
+  generator_api_base: ""    # 留空则使用环境变量
+  generator_api_key: ""     # 留空则使用环境变量
+  # 每个攻击样本生成几个欺骗变体
+  variants_per_sample: 2
+  # 欺骗策略
+  strategies:
+    - understate_risk        # 淡化风险：声明 read 实际 delete
+    - mislabel_target        # 错标目标：声明操作 A 实际操作 B
+    - fabricate_basis         # 伪造依据：编造不存在的用户指令
+    - hide_side_effects      # 隐藏副作用：声明无副作用实际有
+
+# ---------------------------------------------------------------------------
+# 模型微调
+# ---------------------------------------------------------------------------
+fine_tuning:
+  base_model: Qwen/Qwen2.5-7B-Instruct
+  method: lora              # lora | full
+  lora:
+    r: 16
+    alpha: 32
+    dropout: 0.05
+    target_modules: [q_proj, v_proj]
+  training:
+    epochs: 3
+    batch_size: 4
+    learning_rate: 2.0e-5
+    warmup_ratio: 0.1
+    weight_decay: 0.01
+    max_seq_length: 4096
+    gradient_accumulation_steps: 4
+  validation_split: 0.1
+  output_dir: outputs/guard_models
