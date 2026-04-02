@@ -1,0 +1,61 @@
+{
+  "generated_at": "2026-03-30T15:22:52+00:00",
+  "ok": true,
+  "env_file": ".env",
+  "output_root": "outputs/baseline",
+  "summary": {
+    "total_checks": 5,
+    "passed": 5,
+    "failed": 0
+  },
+  "checks": [
+    {
+      "id": "runtime_imports",
+      "status": "pass",
+      "summary": "Required runtime imports resolved successfully.",
+      "details": [
+        "runtime.core",
+        "runtime.parsers",
+        "processors.agentharm",
+        "processors.asb"
+      ]
+    },
+    {
+      "id": "baseline_agents",
+      "status": "pass",
+      "summary": "Required Phase 0 agent builders are available.",
+      "details": [
+        "react",
+        "sec_react"
+      ]
+    },
+    {
+      "id": "datasets",
+      "status": "pass",
+      "summary": "All required benchmark datasets are present.",
+      "details": {
+        "agentharm_harmful_dataset": "data/agentharm/dataset/harmful_behaviors_test_public.json",
+        "asb_tasks": "data/asb/data/agent_task.jsonl",
+        "asb_normal_tools": "data/asb/data/all_normal_tools.jsonl",
+        "asb_attack_tools": "data/asb/data/all_attack_tools.jsonl"
+      }
+    },
+    {
+      "id": "output_root",
+      "status": "pass",
+      "summary": "The baseline output root is writable.",
+      "details": {
+        "path": "outputs/baseline"
+      }
+    },
+    {
+      "id": "model_config",
+      "status": "pass",
+      "summary": "Required Phase 0 model settings are configured.",
+      "details": [
+        "react",
+        "sec_react"
+      ]
+    }
+  ]
+}

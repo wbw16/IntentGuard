@@ -1,0 +1,119 @@
+# 评测框架配置
+# Phase 5: 实验矩阵、指标参数、输出格式
+
+# ------------------------------------------------------------------
+# 实验矩阵
+# ------------------------------------------------------------------
+experiment_matrix:
+  agents:
+    - react
+    - sec_react
+    - intentguard
+    - planexecute
+    - ipiguard
+    - react_firewall
+
+  benchmarks:
+    agentharm:
+      subsets: [harmful, benign]
+      data_dir: data/agentharm/dataset
+    asb:
+      attack_types: [OPI, DPI]
+      task_nums: 1
+      data_dir: data/asb/data
+    agentdojo:
+      suites: [banking, slack, travel, workspace]
+      attack_modes: [injection, benign]
+      data_dir: data/agentdojo/suites
+
+# ------------------------------------------------------------------
+# 指标定义
+# ------------------------------------------------------------------
+metrics:
+  # 攻击成功率：攻击场景中 agent 执行了恶意工具的比例
+  asr:
+    name: "Attack Success Rate"
+    direction: lower_is_better
+    description: "Fraction of attack scenarios where the agent executed the malicious tool call"
+
+  # 任务完成率：良性场景中 agent 成功完成任务的比例
+  tcr:
+    name: "Task Completion Rate"
+    direction: higher_is_better
+    description: "Fraction of benign scenarios where the agent completed the task"
+
+  # 误报率：正常调用被误拦截的比例
+  fpr:
+    name: "False Positive Rate"
+    direction: lower_is_better
+    description: "Fraction of benign tool calls incorrectly blocked"
+
+  # 延迟开销：护栏引入的额外推理时间（秒）
+  latency_overhead:
+    name: "Latency Overhead"
+    direction: lower_is_better
+    unit: seconds
+
+  # 意图欺骗检测率
+  deception_detection_rate:
+    name: "Deception Detection Rate"
+    direction: higher_is_better
+    description: "Fraction of deceptive intent declarations correctly identified"
+
+  # 决策分布
+  decision_distribution:
+    name: "Decision Distribution"
+    description: "Distribution of ALLOW/DENY/MODIFY/CONFIRM decisions"
+
+# ------------------------------------------------------------------
+# 消融实验
+# ------------------------------------------------------------------
+ablation:
+  # 在这些 benchmark 上运行消融
+  benchmarks: [agentharm_harmful, asb_OPI]
+
+  variants:
+    full:
+      description: "IntentGuard 完整版"
+      agent: intentguard
+      overrides: {}
+
+    no_cross_validation:
+      description: "去掉交叉验证，仅用意图声明"
+      agent: intentguard
+      overrides:
+        disable_cross_validation: true
+
+    no_intent:
+      description: "去掉意图声明，仅用参数检查"
+      agent: intentguard
+      overrides:
+        disable_intent: true
+
+    no_policy:
+      description: "去掉策略引擎，仅用交叉验证"
+      agent: intentguard
+      overrides:
+        disable_policy: true
+
+    no_deception_detection:
+      description: "去掉意图欺骗检测"
+      agent: intentguard
+      overrides:
+        disable_deception_detection: true
+
+    binary_only:
+      description: "二元决策替代细粒度决策"
+      agent: intentguard
+      overrides:
+        binary_decisions: true
+
+# ------------------------------------------------------------------
+# 输出配置
+# ------------------------------------------------------------------
+output:
+  base_dir: outputs
+  eval_dir: outputs/eval_results
+  ablation_dir: outputs/ablation
+  final_dir: outputs/final
+  formats: [json, markdown]

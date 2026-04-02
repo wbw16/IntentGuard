@@ -16,7 +16,8 @@ for alias_name, target_name in (
     ("runtime", "runtime"),
     ("processors", "processors"),
     ("agents", "agents"),
+    ("guard", "guard"),
 ):
     _alias_package(alias_name, target_name)
 
-__all__ = ["agents", "processors", "runtime"]
+__all__ = ["agents", "guard", "processors", "runtime"]

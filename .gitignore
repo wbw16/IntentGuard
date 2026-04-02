@@ -40,3 +40,6 @@ env/
 
 # Local tool state
 .codex/
+.claude/
+.github/
+.opencode/

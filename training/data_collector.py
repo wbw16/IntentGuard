@@ -32,6 +32,12 @@ class DataCollector:
         if not data_path.exists():
             return []
 
+        # 工具目录：harmful → harmful_tools，benign → benign_tools
+        tools_cfg = cfg.get("tools_dir", {})
+        tools_dir = BASE_DIR / tools_cfg.get(
+            subset, f"data/agentharm/environments/{'harmful' if subset == 'harmful' else 'benign'}_tools"
+        )
+
         with open(data_path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
@@ -39,11 +45,18 @@ class DataCollector:
         for item in data.get("behaviors", []):
             attack_type = AttackType.HARMFUL if subset == "harmful" else AttackType.NONE
             harmful_tools = item.get("harmful_tool", [])
+            tool_names: list[str] = item.get("target_functions", [])
+
+            # 从工具 .py 文件加载描述和参数定义
+            tool_descriptions, tool_params = _load_agentharm_tool_env(tool_names, tools_dir)
+
             scenarios.append(AttackScenario(
                 scenario_id=f"agentharm_{subset}_{item.get('id', '')}",
                 source="agentharm",
                 query=item.get("prompt", ""),
-                tools=item.get("target_functions", []),
+                tools=tool_names,
+                tool_descriptions=tool_descriptions,
+                tool_params=tool_params,
                 attack_type=attack_type,
                 expected_harmful_tool=harmful_tools[0] if harmful_tools else "",
                 metadata={
@@ -177,7 +190,76 @@ class DataCollector:
 # Helpers
 # ---------------------------------------------------------------------------
 
+import importlib.util
+import re
 import yaml  # noqa: E402 — deferred to avoid circular import at module level
+
+
+def _parse_tool_file(tool_file: Path) -> tuple[str, dict]:
+    """从工具 .py 文件中提取描述字符串和参数信息。
+
+    Returns:
+        (description, params_dict)
+        params_dict 格式：{param_name: {"description": ..., "type": ...}}
+    """
+    try:
+        source = tool_file.read_text(encoding="utf-8")
+    except OSError:
+        return "", {}
+
+    # 提取 docstring
+    doc_match = re.search(r'"""\s*(.*?)\s*"""', source, re.DOTALL)
+    if not doc_match:
+        return "", {}
+    doc = doc_match.group(1).strip()
+    description = doc.split("\n")[0].strip()
+
+    # 提取 Args 段落
+    args_match = re.search(r"Args:\s*(.*?)\s*(?=Returns:|$)", doc, re.DOTALL)
+    args_text = args_match.group(1).strip() if args_match else ""
+
+    params: dict = {}
+    for line in args_text.splitlines():
+        line = line.strip()
+        m = re.match(r"(\w+):\s*(.*)", line)
+        if m:
+            params[m.group(1)] = {"description": m.group(2).strip()}
+
+    # 从函数签名补充类型信息
+    head_match = re.search(r"def \w+\((.*?)\)", source, re.DOTALL)
+    if head_match:
+        for pname, ptype in re.findall(r"(\w+):\s*([\w\[\], ]+)", head_match.group(1)):
+            if pname in params:
+                params[pname]["type"] = ptype.strip()
+
+    return description, params
+
+
+def _load_agentharm_tool_env(
+    tool_names: list[str],
+    tools_dir: Path,
+) -> tuple[dict[str, str], dict[str, dict]]:
+    """从 AgentHarm 工具目录加载指定工具的描述和参数定义。
+
+    Returns:
+        (tool_descriptions, tool_params)
+    """
+    tool_descriptions: dict[str, str] = {}
+    tool_params: dict[str, dict] = {}
+
+    for name in tool_names:
+        tool_file = tools_dir / f"{name}.py"
+        if not tool_file.exists():
+            # 尝试在目录里模糊匹配（防止大小写差异）
+            matches = list(tools_dir.glob(f"{name}.py"))
+            if not matches:
+                continue
+            tool_file = matches[0]
+        desc, params = _parse_tool_file(tool_file)
+        tool_descriptions[name] = desc
+        tool_params[name] = params
+
+    return tool_descriptions, tool_params
 
 
 def _read_jsonl(path: Path) -> list[dict]:

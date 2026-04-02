@@ -30,7 +30,7 @@ from runtime.prompts import INTENTGUARD_REACT_SYSTEM_PROMPT
 from guardrail import DecisionType, GuardrailDecision, GuardrailMiddleware
 
 
-class IntentGuard_Agent:
+class IntentGuardAgent:
     """带结构化意图声明的 ReAct 策略。
 
     每步工具调用前：
@@ -122,6 +122,7 @@ class IntentGuard_Agent:
                 intent_log.append({
                     "turn": i,
                     "tool": tool_name,
+                    "params": tool_params,
                     "intent": intent.to_dict(),
                     "intent_valid": intent.is_valid,
                 })
@@ -202,7 +203,7 @@ def build_agent(system_template: str = INTENTGUARD_REACT_SYSTEM_PROMPT,
     )
     agentic_model = create_model_from_config(config=model_config)
     guard_model = create_guard_from_env("STANDALONE_INTENTGUARD", model_config)
-    return IntentGuard_Agent(
+    return IntentGuardAgent(
         system_template=system_template,
         agentic_model=agentic_model,
         guard_model=guard_model,

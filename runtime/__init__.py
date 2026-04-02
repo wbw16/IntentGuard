@@ -5,5 +5,6 @@
 """
 
 from .core import AgentCore
-from .factory import create_guard_from_config, create_model_from_config
+from .factory import create_guard_from_config, create_guard_from_env, create_model_from_config
 from .modeling import RuntimeModelConfig, StandaloneGuardian, StandaloneModel
+from guard import GuardConfig, GuardDecision, GuardEvaluationRequest, GuardSubsystem

@@ -13,21 +13,16 @@ model_type = os.getenv("STANDALONE_DEFAULT_MODEL_TYPE", "api")
 model_path = os.getenv("STANDALONE_DEFAULT_MODEL_PATH", "")
 max_tokens = int(os.getenv("STANDALONE_DEFAULT_MAX_TOKENS", "2048"))
 top_p = float(os.getenv("STANDALONE_DEFAULT_TOP_P", "0.9"))
-guard_model_name = os.getenv("STANDALONE_DEFAULT_GUARD_MODEL_NAME", model_name)
-guard_api_key = os.getenv("STANDALONE_DEFAULT_GUARD_API_KEY", api_key)
-guard_api_base = os.getenv("STANDALONE_DEFAULT_GUARD_API_BASE", api_base)
-guard_temperature = float(os.getenv("STANDALONE_DEFAULT_GUARD_TEMPERATURE", str(temperature)))
-guard_model_type = os.getenv("STANDALONE_DEFAULT_GUARD_MODEL_TYPE", model_type)
-guard_model_path = os.getenv("STANDALONE_DEFAULT_GUARD_MODEL_PATH", model_path)
 default_max_turns = int(os.getenv("STANDALONE_DEFAULT_MAX_TURNS", "10"))
 
 from copy import deepcopy
 
-from standalone_agent_env.runtime.core import AgentCore
-from standalone_agent_env.runtime.factory import create_guard_from_config, create_model_from_config
+from runtime.core import AgentCore
+from runtime.factory import create_guard_from_env, create_model_from_config
+from runtime.modeling import RuntimeModelConfig
 
 
-class Default_Agent:
+class DefaultAgent:
     """最简单的消息执行封装。
 
     它不会主动组织复杂的工具推理流程，只负责把已有消息列表交给模型执行。
@@ -60,7 +55,7 @@ class Default_Agent:
 
 def build_agent(system_template: str = "", max_turns: int = default_max_turns):
     """根据文件顶部配置构造默认 agent。"""
-    agentic_model = create_model_from_config(
+    model_config = RuntimeModelConfig(
         model_name=model_name,
         model_type=model_type,
         model_path=model_path,
@@ -70,17 +65,9 @@ def build_agent(system_template: str = "", max_turns: int = default_max_turns):
         max_tokens=max_tokens,
         top_p=top_p,
     )
-    guard_model = create_guard_from_config(
-        model_name=guard_model_name,
-        model_type=guard_model_type,
-        model_path=guard_model_path,
-        api_base=guard_api_base,
-        api_key=guard_api_key,
-        temperature=guard_temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-    )
-    return Default_Agent(
+    agentic_model = create_model_from_config(config=model_config)
+    guard_model = create_guard_from_env("STANDALONE_DEFAULT", model_config)
+    return DefaultAgent(
         system_template=system_template,
         agentic_model=agentic_model,
         guard_model=guard_model,

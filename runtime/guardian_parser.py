@@ -359,7 +359,7 @@ def alignment_check_parser(guard_res):
         return guard_res.get("conclusion")
 
 
-guardian_paser_map = {
+guardian_parser_map = {
     # 维护“模型名 -> 解析函数”的映射，便于 guardian 运行时自动选择解析逻辑。
     "gpt-4o-2024-08-06": ashellguardian_parser_v2,
     "gemini-3-flash-preview": ashellguardian_parser,

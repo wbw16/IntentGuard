@@ -37,7 +37,7 @@ def _check_runtime_imports() -> dict[str, Any]:
             "status": "fail",
             "summary": "One or more required runtime imports failed.",
             "details": failed,
-            "remediation": "Verify the standalone compatibility namespace and runtime module dependencies.",
+            "remediation": "Verify the canonical runtime and processor modules are importable.",
         }
 
     return {
@@ -51,14 +51,14 @@ def _check_runtime_imports() -> dict[str, Any]:
 def _check_required_agents() -> dict[str, Any]:
     failures: list[dict[str, str]] = []
     try:
-        from standalone_agent_env.agents import get_agent_builder
+        from agents import get_agent_builder
     except Exception as exc:
         return {
             "id": "baseline_agents",
             "status": "fail",
             "summary": "The baseline agent registry could not be imported.",
             "details": [{"error": f"{type(exc).__name__}: {exc}"}],
-            "remediation": "Fix the standalone agent namespace before running Phase 0 baselines.",
+            "remediation": "Fix the agents module before running Phase 0 baselines.",
         }
 
     for agent_name in PHASE0_AGENTS:

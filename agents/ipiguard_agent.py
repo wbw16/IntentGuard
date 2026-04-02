@@ -12,23 +12,18 @@ model_type = os.getenv("STANDALONE_IPIGUARD_MODEL_TYPE", "api")
 model_path = os.getenv("STANDALONE_IPIGUARD_MODEL_PATH", "")
 max_tokens = int(os.getenv("STANDALONE_IPIGUARD_MAX_TOKENS", "2048"))
 top_p = float(os.getenv("STANDALONE_IPIGUARD_TOP_P", "0.9"))
-guard_model_name = os.getenv("STANDALONE_IPIGUARD_GUARD_MODEL_NAME", model_name)
-guard_api_key = os.getenv("STANDALONE_IPIGUARD_GUARD_API_KEY", api_key)
-guard_api_base = os.getenv("STANDALONE_IPIGUARD_GUARD_API_BASE", api_base)
-guard_temperature = float(os.getenv("STANDALONE_IPIGUARD_GUARD_TEMPERATURE", str(temperature)))
-guard_model_type = os.getenv("STANDALONE_IPIGUARD_GUARD_MODEL_TYPE", model_type)
-guard_model_path = os.getenv("STANDALONE_IPIGUARD_GUARD_MODEL_PATH", model_path)
 default_max_turns = int(os.getenv("STANDALONE_IPIGUARD_MAX_TURNS", "10"))
 
 import json
 from copy import deepcopy
 from types import FunctionType
 
-from standalone_agent_env.runtime.core import AgentCore
-from standalone_agent_env.runtime.factory import create_guard_from_config, create_model_from_config
-from standalone_agent_env.runtime.function_call import FunctionCall
-from standalone_agent_env.runtime.parsers import extract_tool_params_react
-from standalone_agent_env.runtime.prompts import IPIGUARD_SYSTEM_PROMPT
+from runtime.core import AgentCore
+from runtime.factory import create_guard_from_env, create_model_from_config
+from runtime.function_call import FunctionCall
+from runtime.modeling import RuntimeModelConfig
+from runtime.parsers import extract_tool_params_react
+from runtime.prompts import IPIGUARD_SYSTEM_PROMPT
 
 try:
     import networkx as nx
@@ -47,7 +42,7 @@ def _require_networkx():
         )
 
 
-class IPIGuard_Agent:
+class IPIGuardAgent:
     """基于 DAG 工作流的多工具协作 agent。"""
 
     def __init__(self, system_template="", agentic_model=None, guard_model=None, max_turns=10):
@@ -374,7 +369,7 @@ class IPIGuard_Agent:
 def build_agent(system_template: str = IPIGUARD_SYSTEM_PROMPT, max_turns: int = default_max_turns):
     """根据文件顶部配置构造 IPIGuard agent。"""
     _require_networkx()
-    agentic_model = create_model_from_config(
+    model_config = RuntimeModelConfig(
         model_name=model_name,
         model_type=model_type,
         model_path=model_path,
@@ -384,17 +379,9 @@ def build_agent(system_template: str = IPIGUARD_SYSTEM_PROMPT, max_turns: int = 
         max_tokens=max_tokens,
         top_p=top_p,
     )
-    guard_model = create_guard_from_config(
-        model_name=guard_model_name,
-        model_type=guard_model_type,
-        model_path=guard_model_path,
-        api_base=guard_api_base,
-        api_key=guard_api_key,
-        temperature=guard_temperature,
-        max_tokens=max_tokens,
-        top_p=top_p,
-    )
-    return IPIGuard_Agent(
+    agentic_model = create_model_from_config(config=model_config)
+    guard_model = create_guard_from_env("STANDALONE_IPIGUARD", model_config)
+    return IPIGuardAgent(
         system_template=system_template,
         agentic_model=agentic_model,
         guard_model=guard_model,

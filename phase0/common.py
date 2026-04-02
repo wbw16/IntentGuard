@@ -18,10 +18,10 @@ PLACEHOLDER_VALUES = {"", "REPLACE_ME", "YOUR_API_KEY"}
 PHASE0_AGENTS = ("react", "sec_react")
 PHASE0_BENCHMARKS = ("agentharm", "asb")
 REQUIRED_RUNTIME_IMPORTS = (
-    "standalone_agent_env.runtime.core",
-    "standalone_agent_env.runtime.parsers",
-    "standalone_agent_env.processors.agentharm",
-    "standalone_agent_env.processors.asb",
+    "runtime.core",
+    "runtime.parsers",
+    "processors.agentharm",
+    "processors.asb",
 )
 REQUIRED_DATASET_PATHS = {
     "agentharm_harmful_dataset": REPO_ROOT / "data" / "agentharm" / "dataset" / "harmful_behaviors_test_public.json",

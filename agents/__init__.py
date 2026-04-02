@@ -11,13 +11,14 @@ import importlib
 
 AGENT_BUILDERS = {
     # 每个条目都指向一个 `build_agent` 工厂函数。
-    "default": ("standalone_agent_env.agents.default_agent", "build_agent"),
-    "react": ("standalone_agent_env.agents.react_agent", "build_agent"),
-    "sec_react": ("standalone_agent_env.agents.sec_react_agent", "build_agent"),
-    "planexecute": ("standalone_agent_env.agents.planexecute_agent", "build_agent"),
-    "sec_planexecute": ("standalone_agent_env.agents.sec_planexecute_agent", "build_agent"),
-    "ipiguard": ("standalone_agent_env.agents.ipiguard_agent", "build_agent"),
-    "react_firewall": ("standalone_agent_env.agents.react_firewall_agent", "build_agent"),
+    "default": ("agents.default_agent", "build_agent"),
+    "react": ("agents.react_agent", "build_agent"),
+    "sec_react": ("agents.sec_react_agent", "build_agent"),
+    "planexecute": ("agents.planexecute_agent", "build_agent"),
+    "sec_planexecute": ("agents.sec_planexecute_agent", "build_agent"),
+    "ipiguard": ("agents.ipiguard_agent", "build_agent"),
+    "react_firewall": ("agents.react_firewall_agent", "build_agent"),
+    "intentguard": ("agents.intentguard_agent", "build_agent"),
 }
 
 

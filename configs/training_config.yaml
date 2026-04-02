@@ -67,6 +67,56 @@ deception_augmentation:
 # ---------------------------------------------------------------------------
 # 模型微调
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# SFT 标签维度映射
+# ---------------------------------------------------------------------------
+# 每个 attack_type 对应四维权重 w，分数 = 1.0 - risk_level * w
+# w=1.0 表示该维度完全反映风险，w=0.2 表示几乎不受影响
+dimension_profiles:
+  OPI:
+    # 工具输出被注入：参数来自注入指令，突然偏离正常轨迹
+    intent_vs_params: 1.0
+    intent_vs_user_query: 0.2
+    intent_vs_history: 0.8
+    holistic: 1.0
+  DPI:
+    # 用户请求被篡改：请求本身含恶意，参数和意图可能一致
+    intent_vs_params: 0.3
+    intent_vs_user_query: 1.0
+    intent_vs_history: 0.2
+    holistic: 1.0
+  harmful:
+    # 本身有害的请求：意图和参数可能矛盾，请求本身就有害
+    intent_vs_params: 0.8
+    intent_vs_user_query: 1.0
+    intent_vs_history: 0.3
+    holistic: 1.0
+  injection:
+    # AgentDojo 注入：类似 OPI
+    intent_vs_params: 0.9
+    intent_vs_user_query: 0.3
+    intent_vs_history: 0.7
+    holistic: 1.0
+  deception:
+    # 意图欺骗：假意图 vs 真参数矛盾大，用户请求可能无害
+    intent_vs_params: 1.0
+    intent_vs_user_query: 0.2
+    intent_vs_history: 0.3
+    holistic: 1.0
+  default:
+    # 未知类型回退：全维度等权
+    intent_vs_params: 1.0
+    intent_vs_user_query: 1.0
+    intent_vs_history: 1.0
+    holistic: 1.0
+
+# contradictions 填充阈值：分数低于此值时生成矛盾描述
+contradiction_threshold: 0.5
+
+# ---------------------------------------------------------------------------
+# 模型微调
+# ---------------------------------------------------------------------------
 fine_tuning:
   base_model: Qwen/Qwen2.5-7B-Instruct
   method: lora              # lora | full

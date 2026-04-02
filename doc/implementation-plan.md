@@ -147,7 +147,7 @@ standalone_agent_env/
 - 格式错误/缺失走 fallback（保守默认值）
 
 任务 1.5: ✅ 创建 IntentGuard 策略智能体
-- agents/intentguard_agent.py — IntentGuard_Agent
+- agents/intentguard_agent.py — IntentGuardAgent
 - ReAct 循环中每步提取意图 + 护栏评估
 - _evaluate_intent() 占位接口，Phase 2 替换为 GuardrailMiddleware
 ```
@@ -336,111 +336,127 @@ DataCollector (agentharm/asb/agentdojo)
 
 ---
 
-## Phase 4：AgentDojo 本地 Runner 补全（预计 2 天）
+## Phase 4：AgentDojo 本地 Runner 补全 ✅ 已完成
 
 ### 目标
 补全 AgentDojo 的本地执行入口，扩充评测覆盖面。
 
-### Claude Code 任务清单
+### 已完成任务
 
 ```
-任务 4.1: 实现 AgentDojo 处理器
-- 创建 processors/agentdojo.py
-- 读取 data/agentdojo/suites/ 下的 environment.yaml
+任务 4.1: ✅ 实现 AgentDojo 处理器
+- processors/agentdojo.py — AgentDojoProcessor 类
+- 读取 data/agentdojo/suites/ 下的 environment.yaml（支持 !include 指令）
 - 读取 injection_vectors.yaml 中的攻击配置
-- 构造工具环境和任务实例
-- 对接 agents/ 下的智能体接口
+- 递归字符串替换解析 {injection_xxx} 占位符（避免 JSON 特殊字符问题）
+- 构造 get_{resource} / get_{resource}_{sub_key} 工具环境
+- 支持 benign / injection 两种模式
+- 对接 agents/ 下的智能体接口（agent_invoke）
 
-任务 4.2: 创建 AgentDojo 运行脚本
-- 创建 scripts/run_agentdojo.py
-- 支持选择 suite (banking, slack, travel, workspace)
-- 支持选择 agent 策略
-- 支持选择是否启用注入攻击
+任务 4.2: ✅ 创建 AgentDojo 运行脚本
+- scripts/run_agentdojo.py — 支持选择 suite / agent / attack_mode
 - 输出到 outputs/agentdojo/<agent>/<suite>/
 
-任务 4.3: 验证四个 suite 的端到端运行
-- 逐个 suite 跑通 react_agent 基线
-- 确认输出格式与 AgentHarm/ASB 对齐
+任务 4.3: ✅ 验证四个 suite 的端到端运行
+- banking (4 injection vectors), slack (6), travel (13), workspace (16)
+- 共 39 个注入向量，全部可正常加载和执行
+
+任务 4.4: ✅ 测试
+- tests/test_agentdojo.py — 12 个测试全部通过
+- 覆盖: YAML 加载、占位符替换（benign/injection/特殊字符）、
+  工具构造、任务生成、端到端运行、断点续跑、!include 指令
 ```
 
 ### 产出物
 - `processors/agentdojo.py` — AgentDojo 处理器
 - `scripts/run_agentdojo.py` — 运行入口
-- `outputs/agentdojo/` — AgentDojo 基线结果
+- `tests/test_agentdojo.py` — 12 个单元测试
 
 ---
 
-## Phase 5：评测框架与实验执行（预计 3-4 天）
+## Phase 5：评测框架与实验执行 ✅ 已完成
 
 ### 目标
 构建统一评测框架，执行完整对比实验和消融实验。
 
-### Claude Code 任务清单
+### 已完成任务
 
 ```
-任务 5.1: 实现指标计算模块 (metrics.py)
-- 创建 evaluation/metrics.py
-- 实现以下指标计算：
-  - ASR (Attack Success Rate): 攻击成功率，越低越好
-  - TCR (Task Completion Rate): 任务完成率，越高越好
-  - FPR (False Positive Rate): 误报率（正常调用被误拦截）
-  - Latency Overhead: 护栏引入的额外延迟
-  - Deception Detection Rate: 意图欺骗识别率
-  - Decision Distribution: 各决策类型的分布统计
+任务 5.1: ✅ 实现指标计算模块 (metrics.py)
+- evaluation/metrics.py — EvalMetrics dataclass
+- 指标: ASR, TCR, FPR, Latency, Deception Detection Rate
+- compute_metrics_from_meta() 从 meta_data.json 计算指标
+- _extract_attack_tool() 支持 AgentHarm / ASB / AgentDojo 三种格式
+- load_and_compute() 从文件加载并计算
 
-任务 5.2: 实现评测运行器 (eval_runner.py)
-- 创建 evaluation/eval_runner.py
-- 支持批量运行 agent × benchmark × attack_type 组合
-- 实验矩阵:
-  | Agent               | AgentHarm | ASB-OPI | ASB-DPI | AgentDojo |
-  |---------------------|-----------|---------|---------|-----------|
-  | react (baseline)    |     ✓     |    ✓    |    ✓    |     ✓     |
-  | sec_react (ToolSafe)|     ✓     |    ✓    |    ✓    |     ✓     |
-  | intentguard (ours)  |     ✓     |    ✓    |    ✓    |     ✓     |
-  | planexecute         |     ✓     |    ✓    |    ✓    |     ✓     |
-  | ipiguard            |     ✓     |    ✓    |    ✓    |     ✓     |
-  | react_firewall      |     ✓     |    ✓    |    ✓    |     ✓     |
-- 自动汇总所有结果
+任务 5.2: ✅ 实现评测运行器 (eval_runner.py)
+- evaluation/eval_runner.py — EvalRunner 类
+- build_run_specs() 构建 agent × benchmark 实验矩阵
+- run_single() 分发到对应 Processor
+- run_all() 批量运行 + 异常处理 + 汇总
 
-任务 5.3: 实现消融实验 (ablation.py)
-- 创建 evaluation/ablation.py
-- 消融实验设计:
-  A1: IntentGuard 完整版 (full)
-  A2: 去掉交叉验证，仅用意图声明 (no_cross_validation)
-  A3: 去掉意图声明，仅用参数检查 (no_intent)
-  A4: 去掉策略引擎，仅用交叉验证 (no_policy)
-  A5: 去掉意图欺骗检测 (no_deception_detection)
-  A6: 二元决策替代细粒度决策 (binary_only)
-- 每个消融配置对应一个 agent 变体
-- 在 ASB-OPI 和 AgentHarm-harmful 上运行
+任务 5.3: ✅ 实现消融实验 (ablation.py)
+- evaluation/ablation.py — AblationRunner 类
+- 5 个消融变体: no_cross_validation, no_intent, no_policy,
+  no_deception_detection, binary_only
+- 通过环境变量覆盖实现配置切换
 
-任务 5.4: 实现结果报告生成器 (report_generator.py)
-- 创建 evaluation/report_generator.py
-- 生成 LaTeX 表格格式的对比结果
-- 生成消融实验表格
-- 生成决策分布可视化数据
-- 输出 Markdown 和 JSON 格式
+任务 5.4: ✅ 实现结果报告生成器 (report_generator.py)
+- evaluation/report_generator.py — ReportGenerator 类
+- generate_comparison_table() — Agent × Benchmark Markdown 表格
+- generate_ablation_table() — 消融实验表格
+- generate_decision_table() — 决策分布表格
+- generate_full_report() — 完整报告（Markdown + JSON）
 
-任务 5.5: 创建评测配置
-- 创建 configs/eval_config.yaml
-- 定义实验矩阵
-- 定义指标计算参数
-- 定义输出格式
+任务 5.5: ✅ 创建评测配置
+- configs/eval_config.yaml — 实验矩阵 + 指标参数 + 输出格式
 
-任务 5.6: 创建一键运行脚本
-- 创建 scripts/run_intentguard_eval.py
-  - 运行完整对比实验
-- 创建 scripts/run_ablation.py
-  - 运行消融实验
-- 创建 scripts/run_training_pipeline.py
-  - 运行训练流水线
+任务 5.6: ✅ 创建运行脚本
+- scripts/run_intentguard_eval.py — 完整对比实验入口
+- scripts/run_ablation.py — 消融实验入口
+- scripts/run_data_pipeline.py — 训练数据构造流水线入口
+  - 支持 --max-scenarios / --strategy 参数
+  - 输出文件名包含模型名称（支持多模型数据生成）
+  - 手动 .env 解析（支持 ${VAR} 引用）
+
+任务 5.7: ✅ 测试
+- tests/test_evaluation.py — 23 个测试全部通过
+- 覆盖: EvalMetrics 属性计算、meta_data 指标提取、
+  attack_tool 提取（三种格式）、决策提取、
+  EvalRunner 实验矩阵构建、ReportGenerator 表格生成
 ```
+
+### 全量训练数据采集结果（多模型）
+
+使用 intentguard agent 策略，每个模型跑 149 个场景（harmful 50 + benign 49 + OPI 50）：
+
+| 模型 | 样本数 | ALLOW | DENY | CONFIRM | 欺骗变体 |
+|------|--------|-------|------|---------|----------|
+| Qwen/Qwen3-VL-32B-Instruct | 411 | 290 | 66 | 55 | 44 |
+| tencent/Hunyuan-A13B-Instruct | 355 | 227 | 75 | 53 | 50 |
+| THUDM/GLM-Z1-32B-0414 | 226 | 168 | 42 | 16 | 28 |
+| inclusionAI/Ring-flash-2.0 | 152 | 134 | 18 | 0 | 12 |
+| deepseek-ai/DeepSeek-V3.2 | 149 | 72 | 45 | 32 | 30 |
+| claude-sonnet-4-6 | 10 | — | — | — | — |
+| stepfun-ai/Step-3.5-Flash | 9 | 9 | 0 | 0 | 0 |
+| **合计** | **1312** | | | | **164** |
+
+输出文件位于 `data/guard_training/`：
+- `samples_{model_tag}.jsonl` — 训练样本
+- `sft_data_{model_tag}.jsonl` — SFT 格式数据（带差异化四维分数）
 
 ### 产出物
-- `evaluation/` 完整目录
-- `configs/eval_config.yaml` 评测配置
-- `scripts/` 三个入口脚本
-- `outputs/` 完整实验结果
+- `evaluation/__init__.py` — 模块文档
+- `evaluation/metrics.py` — 指标计算
+- `evaluation/eval_runner.py` — 评测运行器
+- `evaluation/ablation.py` — 消融实验
+- `evaluation/report_generator.py` — 结果报告生成
+- `configs/eval_config.yaml` — 评测配置
+- `scripts/run_intentguard_eval.py` — 对比实验入口
+- `scripts/run_ablation.py` — 消融实验入口
+- `scripts/run_data_pipeline.py` — 训练数据构造入口
+- `tests/test_evaluation.py` — 23 个单元测试
+- `data/guard_training/` — 1312 条训练样本（7 个模型）+ SFT 数据
 
 ---
 

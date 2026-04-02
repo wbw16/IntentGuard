@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-03-30T23:16:44+00:00",
+  "output_root": "outputs/baseline",
+  "readiness_report": "outputs/baseline/readiness/report.json",
+  "task_nums": 1,
+  "skip_readiness": true,
+  "runs": [
+    {
+      "benchmark": "agentharm",
+      "agent": "react",
+      "scope": "harmful",
+      "task_nums": 1,
+      "expected_samples": 176,
+      "actual_samples_before": 0,
+      "actual_samples_after": 144,
+      "status": "failed",
+      "resumed": false,
+      "artifact_path": "outputs/baseline/agentharm/react/harmful/meta_data.json",
+      "output_dir": "outputs/baseline/agentharm/react/harmful",
+      "error": "APITimeoutError: Request timed out."
+    },
+    {
+      "benchmark": "asb",
+      "agent": "react",
+      "scope": "opi",
+      "task_nums": 1,
+      "expected_samples": 400,
+      "actual_samples_before": 0,
+      "actual_samples_after": 52,
+      "status": "failed",
+      "resumed": false,
+      "artifact_path": "outputs/baseline/asb/react/opi/meta_data.json",
+      "output_dir": "outputs/baseline/asb/react/opi",
+      "error": "APIConnectionError: Connection error."
+    },
+    {
+      "benchmark": "agentharm",
+      "agent": "sec_react",
+      "scope": "harmful",
+      "task_nums": 1,
+      "expected_samples": 176,
+      "actual_samples_before": 0,
+      "actual_samples_after": 0,
+      "status": "failed",
+      "resumed": false,
+      "artifact_path": "outputs/baseline/agentharm/sec_react/harmful/meta_data.json",
+      "output_dir": "outputs/baseline/agentharm/sec_react/harmful",
+      "error": "APIConnectionError: Connection error."
+    },
+    {
+      "benchmark": "asb",
+      "agent": "sec_react",
+      "scope": "opi",
+      "task_nums": 1,
+      "expected_samples": 400,
+      "actual_samples_before": 0,
+      "actual_samples_after": 36,
+      "status": "failed",
+      "resumed": false,
+      "artifact_path": "outputs/baseline/asb/sec_react/opi/meta_data.json",
+      "output_dir": "outputs/baseline/asb/sec_react/opi",
+      "error": "APIStatusError: Error code: 402 - {'error': {'code': '402', 'message': 'Insufficient account balance', 'type': 'insufficient_balance'}}"
+    }
+  ]
+}

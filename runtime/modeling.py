@@ -14,9 +14,6 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     OpenAI = None
 
-from .guardian_parser import alignment_check_parser, guardian_paser_map
-from .prompts import GUARD_TEMPLATES
-
 try:
     from transformers import AutoModelForCausalLM, AutoTokenizer
 except ImportError:  # pragma: no cover - optional dependency
@@ -29,10 +26,6 @@ try:
 except ImportError:  # pragma: no cover - optional dependency
     LLM = None
     SamplingParams = None
-
-
-DEFAULT_GUARD_TEMPLATE_KEY = "qwen2.5-7b-instruct"
-
 
 @dataclass
 class RuntimeModelConfig:
@@ -134,99 +127,11 @@ class StandaloneModel:
             _ = self.client
         return self._sampling
 
+from guard import GuardConfig, GuardDecision, GuardEvaluationRequest, GuardSubsystem
 
-class StandaloneGuardian(StandaloneModel):
-    """安全判别模型包装器。
 
-    guardian 与普通 agent model 共享底层配置和客户端逻辑，
-    但额外提供了若干安全评估工具接口，便于被 agent 作为“安全工具”调用。
-    """
+class StandaloneGuardian(GuardSubsystem):
+    """Backward-compatible runtime wrapper around the dedicated Guard subsystem."""
 
-    def get_judgment_res(self, meta_info, max_turn: int = 3):
-        """根据 guard 模板和解析器反复尝试获取结构化安全判断结果。"""
-        template_key = self.model_name if self.model_name in GUARD_TEMPLATES else DEFAULT_GUARD_TEMPLATE_KEY
-        parser_key = self.model_name if self.model_name in guardian_paser_map else DEFAULT_GUARD_TEMPLATE_KEY
-        guard_input = GUARD_TEMPLATES[template_key].format(**meta_info)
-        guard_messages = [{"role": "user", "content": guard_input}]
-        results = {}
-
-        for _ in range(max_turn):
-            if self.model_type == "api":
-                guard_res = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=guard_messages,
-                    temperature=self.temperature,
-                )
-                guard_res = guard_res.choices[0].message.content
-            else:
-                guard_res = self.client.chat(guard_messages, sampling_params=self.sampling)
-                guard_res = guard_res[0].outputs[0].text.strip()
-
-            if parser_key in guardian_paser_map:
-                parser = guardian_paser_map[parser_key]
-                parsed = parser(guard_res)
-                if isinstance(parsed, tuple):
-                    parser_res, results = parsed
-                else:
-                    parser_res = parsed
-            else:
-                parser_res = None
-
-            if parser_res in [0, 1, 0.5]:
-                return {"risk rating": parser_res, "results": results, "reason": guard_res}
-
-        return {"reason": guard_res}
-
-    def call_tool(self, tool_name, arguments):
-        """提供与普通工具一致的调用入口，方便 agent 统一分发。"""
-        if tool_name == "tool_safety_guardian":
-            return self.tool_safety_guardian(**arguments)
-        if tool_name == "alignment_check":
-            return self.alignment_check(**arguments)
-        return {"reason": "tool name error, expected tool_safety_guardian or alignment_check"}
-
-    def tool_safety_guardian(self, user_request, interaction_history, current_action, current_action_description):
-        """评估当前计划执行的工具动作是否安全。"""
-        return self.get_judgment_res(
-            {
-                "env_info": current_action_description,
-                "user_request": user_request,
-                "agent_action": {
-                    "interaction_history": interaction_history,
-                    "current_action": current_action,
-                },
-            }
-        )
-
-    def alignment_check(self, user_request, interaction_history, current_action, current_action_description):
-        """评估当前动作是否仍然与原始用户意图对齐。"""
-        system_prompt, user_prompt = GUARD_TEMPLATES["alignmentcheck"][0], GUARD_TEMPLATES["alignmentcheck"][1].format(
-            env_info=current_action_description,
-            user_request=user_request,
-            agent_action={
-                "interaction_history": interaction_history,
-                "current_action": current_action,
-            },
-        )
-        guard_messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-
-        for _ in range(3):
-            try:
-                if self.model_type == "api":
-                    guard_res = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=guard_messages,
-                        response_format={"type": "json_object"},
-                        temperature=self.temperature,
-                    )
-                    guard_res = guard_res.choices[0].message.content
-                else:
-                    guard_res = self.client.chat(guard_messages, sampling_params=self.sampling)
-                    guard_res = guard_res[0].outputs[0].text.strip()
-
-                parser_res = alignment_check_parser(guard_res)
-                return {"alignment_check_passed": not parser_res, "reason": guard_res}
-            except Exception as exc:  # pragma: no cover - external API edge case
-                last_exc = exc
-
-        return {"alignment_check_passed": False, "reason": str(last_exc)}
+    def __init__(self, config: RuntimeModelConfig):
+        super().__init__(GuardConfig.from_model_config(config))

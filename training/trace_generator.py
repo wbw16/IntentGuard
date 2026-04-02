@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import ast
 import re
 import json
 from typing import Any
@@ -130,7 +131,7 @@ def _extract_steps(logs: str, intent_log: list[dict]) -> list[TraceStep]:
             steps.append(TraceStep(
                 step_index=entry.get("turn", len(steps)),
                 tool_name=entry.get("tool", ""),
-                tool_params={},
+                tool_params=entry.get("params", {}),
                 intent=entry.get("intent", {}),
             ))
         return steps
@@ -142,7 +143,10 @@ def _extract_steps(logs: str, intent_log: list[dict]) -> list[TraceStep]:
         try:
             params = json.loads(match.group(2))
         except json.JSONDecodeError:
-            params = {}
+            try:
+                params = ast.literal_eval(match.group(2))
+            except Exception:
+                params = {}
         steps.append(TraceStep(
             step_index=i,
             tool_name=tool_name,

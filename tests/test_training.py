@@ -275,17 +275,19 @@ class TestGuardTrainer(unittest.TestCase):
         self.assertIn("total", result["distribution"])
 
     def test_prepare_sft_data(self):
+        """验证 OPI 样本的四维分数差异化。"""
         trainer = GuardTrainer()
         samples = [
             TrainingSample(
-                sample_id="s1",
-                user_query="read file",
-                tool_name="read_file",
-                tool_params={"path": "/tmp/x"},
-                intent_declaration={"action_type": "read"},
-                decision_label=DecisionLabel.ALLOW,
-                risk_level=0.0,
-                reason="normal",
+                sample_id="s_opi",
+                user_query="check balance",
+                tool_name="ResourceAllocationHijack",
+                tool_params={"process": "crypto_miner"},
+                intent_declaration={"action_type": "execute"},
+                decision_label=DecisionLabel.DENY,
+                risk_level=1.0,
+                reason="Attack succeeded: harmful tool",
+                attack_type=AttackType.OPI,
             ),
         ]
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -298,6 +300,51 @@ class TestGuardTrainer(unittest.TestCase):
             self.assertIn("messages", entry)
             self.assertEqual(len(entry["messages"]), 3)
             self.assertEqual(entry["messages"][0]["role"], "system")
+
+            # 解析 assistant 输出验证差异化分数
+            assistant = json.loads(entry["messages"][2]["content"])
+            # OPI: intent_vs_params 应该低, intent_vs_user_query 应该高
+            self.assertLess(assistant["intent_vs_params"]["score"], 0.3)
+            self.assertGreater(assistant["intent_vs_user_query"]["score"], 0.7)
+            # 四个维度不应全部相同
+            scores = [
+                assistant["intent_vs_params"]["score"],
+                assistant["intent_vs_user_query"]["score"],
+                assistant["intent_vs_history"]["score"],
+                assistant["holistic"]["score"],
+            ]
+            self.assertFalse(
+                all(s == scores[0] for s in scores),
+                "All dimension scores are identical — no differentiation",
+            )
+
+    def test_dimension_profiles_fallback(self):
+        """验证未知 attack_type 回退到 default profile。"""
+        from training.train_guard import _compute_dimension_scores, _load_dimension_profiles
+        profiles, _ = _load_dimension_profiles()
+        # 使用 NONE attack_type (value="none")，应回退到 default
+        sample = TrainingSample(
+            sample_id="fallback",
+            risk_level=1.0,
+            attack_type=AttackType.NONE,
+        )
+        scores = _compute_dimension_scores(sample, profiles)
+        # default profile 全维度 w=1.0，所以 score = 1.0 - 1.0*1.0 = 0.0
+        for dim in ("intent_vs_params", "intent_vs_user_query", "intent_vs_history", "holistic"):
+            self.assertAlmostEqual(scores[dim], 0.0)
+
+    def test_contradictions_only_on_low_scores(self):
+        """验证 contradictions 仅在分数 < 0.5 时填充。"""
+        from training.train_guard import _generate_contradictions
+        # 高分 → 空
+        result = _generate_contradictions("intent_vs_params", 0.8, "OPI", "some reason", 0.5)
+        self.assertEqual(result, [])
+        # 低分 → 有内容
+        result = _generate_contradictions("intent_vs_params", 0.1, "OPI", "some reason", 0.5)
+        self.assertTrue(len(result) > 0)
+        # 恰好等于阈值 → 空
+        result = _generate_contradictions("intent_vs_params", 0.5, "OPI", "some reason", 0.5)
+        self.assertEqual(result, [])
 
     def test_train_dry_run(self):
         trainer = GuardTrainer()

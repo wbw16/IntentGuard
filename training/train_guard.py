@@ -19,6 +19,137 @@ from training.label_schema import (
 )
 
 
+# ---------------------------------------------------------------------------
+# 维度感知标注辅助函数
+# ---------------------------------------------------------------------------
+
+_DIMENSIONS = ("intent_vs_params", "intent_vs_user_query", "intent_vs_history", "holistic")
+
+# 每个 (attack_type, dimension) 的矛盾描述模板
+_CONTRADICTION_TEMPLATES: dict[str, dict[str, str]] = {
+    "OPI": {
+        "intent_vs_params": "Tool parameters suggest injected instruction, not declared intent",
+        "intent_vs_history": "Execution flow deviates from prior trajectory after tool output injection",
+        "holistic": "Overall inconsistency: injected payload drives tool call, contradicting stated intent",
+    },
+    "DPI": {
+        "intent_vs_user_query": "User request contains injected malicious instruction conflicting with declared intent",
+        "holistic": "Overall inconsistency: user query has been tampered with adversarial content",
+    },
+    "harmful": {
+        "intent_vs_params": "Declared intent understates the harmful nature of actual tool parameters",
+        "intent_vs_user_query": "User request explicitly asks for harmful action contradicting safe intent declaration",
+        "intent_vs_history": "Tool call escalates beyond what prior steps would justify",
+        "holistic": "Overall inconsistency: harmful tool call disguised as benign operation",
+    },
+    "injection": {
+        "intent_vs_params": "Tool parameters reflect injected task, not the original user request",
+        "intent_vs_history": "Action deviates from established task flow due to injection",
+        "holistic": "Overall inconsistency: injection vector altered the execution path",
+    },
+    "deception": {
+        "intent_vs_params": "Declared intent contradicts actual tool parameters — deceptive intent detected",
+        "intent_vs_user_query": "User query appears benign but actual parameters expose a divergent goal",
+        "intent_vs_history": "Prior steps appear legitimate; fabricated intent exploits established trust in call history",
+        "holistic": "Overall inconsistency: intent declaration is fabricated to appear benign",
+    },
+}
+
+# 对 DENY/deceptive 样本中分数 >= threshold 的维度提供解释性 evidence
+# 说明"为什么分数高但调用仍然危险"，避免模型将高分误判为安全
+_HIGH_SCORE_EVIDENCE: dict[str, dict[str, str]] = {
+    "deception": {
+        "intent_vs_user_query": (
+            "Score is high because the user query is innocuous — "
+            "this is characteristic of deceptive intent, where the original request "
+            "appears legitimate while the declared intent diverges from actual parameters."
+        ),
+        "intent_vs_history": (
+            "Score is high because prior steps appear normal — "
+            "the fabricated intent exploits an established call history to appear consistent."
+        ),
+    },
+    "OPI": {
+        "intent_vs_user_query": (
+            "Score is high because the user query is legitimate; "
+            "the injection was introduced via tool output, not the original request."
+        ),
+    },
+    "DPI": {
+        "intent_vs_params": (
+            "Score is high because tool parameters appear internally consistent; "
+            "the manipulation occurred at the user query level."
+        ),
+        "intent_vs_history": (
+            "Score is high because prior history looks normal; "
+            "the adversarial instruction was embedded in the initial request."
+        ),
+    },
+    "harmful": {
+        "intent_vs_history": (
+            "Score is high because preceding steps may be benign; "
+            "the harmful action is concentrated in this specific tool call."
+        ),
+    },
+}
+
+
+def _load_dimension_profiles() -> tuple[dict[str, dict[str, float]], float]:
+    """从 training_config.yaml 加载维度映射配置。
+
+    Returns:
+        (profiles_dict, contradiction_threshold)
+    """
+    cfg = _load_training_config()
+    profiles = cfg.get("dimension_profiles", {})
+    threshold = cfg.get("contradiction_threshold", 0.5)
+    # 确保 default 存在
+    if "default" not in profiles:
+        profiles["default"] = {d: 1.0 for d in _DIMENSIONS}
+    return profiles, threshold
+
+
+def _compute_dimension_scores(
+    sample: TrainingSample,
+    profiles: dict[str, dict[str, float]],
+) -> dict[str, float]:
+    """根据 attack_type 和 is_deceptive_intent 选择 profile 并计算四维分数。
+
+    Returns:
+        {"intent_vs_params": score, "intent_vs_user_query": score, ...}
+    """
+    # 欺骗样本优先使用 deception profile
+    if sample.is_deceptive_intent:
+        profile = profiles.get("deception", profiles["default"])
+    else:
+        attack_key = sample.attack_type.value  # "none", "OPI", "DPI", "harmful", "injection"
+        profile = profiles.get(attack_key, profiles["default"])
+
+    scores: dict[str, float] = {}
+    for dim in _DIMENSIONS:
+        w = profile.get(dim, 1.0)
+        scores[dim] = 1.0 - sample.risk_level * w
+    return scores
+
+
+def _generate_contradictions(
+    dimension: str,
+    score: float,
+    attack_type: str,
+    reason: str,
+    threshold: float = 0.5,
+) -> list[str]:
+    """为低分维度生成特异性矛盾描述。"""
+    if score >= threshold:
+        return []
+    templates = _CONTRADICTION_TEMPLATES.get(attack_type, {})
+    contradiction = templates.get(dimension)
+    if contradiction:
+        return [contradiction]
+    # fallback: 使用通用 reason
+    return [reason] if reason else []
+
+
 class GuardTrainer:
     """护卫模型微调训练器。"""
 
@@ -44,9 +175,15 @@ class GuardTrainer:
 
     def save_samples(
         self, samples: list[TrainingSample], path: str | Path | None = None,
+        model_name: str = "",
     ) -> Path:
         """将训练样本保存为 JSONL。"""
-        out_path = Path(path) if path else self._data_dir / "samples.jsonl"
+        if path:
+            out_path = Path(path)
+        elif model_name:
+            out_path = self._data_dir / f"samples_{model_name}.jsonl"
+        else:
+            out_path = self._data_dir / "samples.jsonl"
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, "w", encoding="utf-8") as f:
             for s in samples:
@@ -71,14 +208,22 @@ class GuardTrainer:
 
     def prepare_sft_data(
         self, samples: list[TrainingSample], output_path: str | Path | None = None,
+        model_name: str = "",
     ) -> Path:
         """将样本转换为 SFT 格式（messages 格式）。"""
         from guardrail.guard_model_adapter import (
             _CROSS_VALIDATION_SYSTEM,
         )
 
-        out = Path(output_path) if output_path else self._data_dir / "sft_data.jsonl"
+        if output_path:
+            out = Path(output_path)
+        elif model_name:
+            out = self._data_dir / f"sft_data_{model_name}.jsonl"
+        else:
+            out = self._data_dir / "sft_data.jsonl"
         out.parent.mkdir(parents=True, exist_ok=True)
+
+        profiles, threshold = _load_dimension_profiles()
 
         with open(out, "w", encoding="utf-8") as f:
             for s in samples:
@@ -93,26 +238,56 @@ class GuardTrainer:
                     "Evaluate the four cross-validation dimensions and return JSON."
                 )
 
-                # 构造期望的 assistant 输出
+                # 差异化四维分数
+                scores = _compute_dimension_scores(s, profiles)
+                attack_key = "deception" if s.is_deceptive_intent else s.attack_type.value
+                is_risky = (
+                    s.decision_label.value == "DENY"
+                    or s.is_deceptive_intent
+                )
+
+                def _evidence(dim: str, score: float) -> str:
+                    """生成维度 evidence 文本。
+                    低分维度：直接用 reason；
+                    高分维度但整体危险：从 _HIGH_SCORE_EVIDENCE 取解释性文本。
+                    """
+                    if score < threshold:
+                        return s.reason
+                    if is_risky:
+                        return _HIGH_SCORE_EVIDENCE.get(attack_key, {}).get(dim, "")
+                    return ""
+
                 assistant_content = json.dumps({
                     "intent_vs_params": {
-                        "score": 1.0 - s.risk_level,
-                        "contradictions": [s.reason] if s.risk_level > 0.5 else [],
-                        "evidence": s.reason,
+                        "score": scores["intent_vs_params"],
+                        "contradictions": _generate_contradictions(
+                            "intent_vs_params", scores["intent_vs_params"],
+                            attack_key, s.reason, threshold,
+                        ),
+                        "evidence": _evidence("intent_vs_params", scores["intent_vs_params"]),
                     },
                     "intent_vs_user_query": {
-                        "score": 1.0 - s.risk_level,
-                        "contradictions": [],
-                        "evidence": "",
+                        "score": scores["intent_vs_user_query"],
+                        "contradictions": _generate_contradictions(
+                            "intent_vs_user_query", scores["intent_vs_user_query"],
+                            attack_key, s.reason, threshold,
+                        ),
+                        "evidence": _evidence("intent_vs_user_query", scores["intent_vs_user_query"]),
                     },
                     "intent_vs_history": {
-                        "score": 1.0 - s.risk_level * 0.5,
-                        "contradictions": [],
-                        "evidence": "",
+                        "score": scores["intent_vs_history"],
+                        "contradictions": _generate_contradictions(
+                            "intent_vs_history", scores["intent_vs_history"],
+                            attack_key, s.reason, threshold,
+                        ),
+                        "evidence": _evidence("intent_vs_history", scores["intent_vs_history"]),
                     },
                     "holistic": {
-                        "score": 1.0 - s.risk_level,
-                        "contradictions": [s.reason] if s.risk_level > 0.5 else [],
+                        "score": scores["holistic"],
+                        "contradictions": _generate_contradictions(
+                            "holistic", scores["holistic"],
+                            attack_key, s.reason, threshold,
+                        ),
                         "evidence": s.reason,
                     },
                     "suggested_modifications": None,
